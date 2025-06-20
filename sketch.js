@@ -91,13 +91,13 @@ float rand(int i){
 
 vec3 get_blob(int i, float t){
     float spd   = 0.1;    // медленнее
-    float range = 0.0005;    // дальше друг от друга
+    float range = 0.5;    // дальше друг от друга
     vec2  c     = vec2(0.5) + 0.1 * vec2(rand(i), rand(i+42));
     c += range * vec2(
       sin(spd * t * rand(i+2)) * rand(i+56),
      -sin(spd * t) * rand(i*9)
     );
-    float r = 0.025 + 0.005 * abs(rand(i+3)); // чуть меньше
+    float r = 0.0000000000025 + 0.0000005 * abs(rand(i+1)); // чуть меньше
     return vec3(c, r);
 }
 
@@ -121,11 +121,11 @@ void main(){
 
     // один спайк
     float spike     = pow(max(cos(angle - seed), 0.0), 150.0);
-    float spikeAmp  = 0.6 * show; // в 2× длиннее
+    float spikeAmp  = 0.9 * show; // в 2× длиннее
 
     float R = b.z + spikeAmp * spike;
     float d = max(length(center - muv) - R, 0.0);
-    sum += 1.0 / pow(d, 4.0);
+    sum += 1.0 / pow(d * 2.0, 4.0); // заебись 
   }
 
   vec3 bg = vec3(0.882, 0.882, 0.875); // #E1E1DF
