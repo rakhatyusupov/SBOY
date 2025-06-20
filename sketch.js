@@ -13,14 +13,14 @@ const cvs = document.getElementById("glcanvas");
 const gl = cvs.getContext("webgl");
 if (!gl) throw "WebGL not supported";
 
-let fbo, fboTex, fboStretch, fboStretchTex; // Declare framebuffers
+let fbo, fboTex; // Declare framebuffer
 window.addEventListener("resize", resize);
 resize();
 
 function resize() {
   cvs.width = window.innerWidth;
   cvs.height = window.innerHeight;
-  initFramebuffers();
+  initFramebuffer();
 }
 
 function compile(type, src) {
@@ -50,69 +50,6 @@ void main() {
 }
 `;
 
-// —— Stretch shader: stretches images along spikes ——
-const fragStretchSrc = `
-precision highp float;
-uniform vec2      iResolution;
-uniform sampler2D iChannel0;
-uniform float     iTime;
-uniform int       uBlobStart;
-uniform int       uBlobCount;
-uniform float     uTexAspect;
-
-float rand(int i){
-  return fract(sin(float(i)*12.9898 + 78.233)*43758.5453);
-}
-
-vec3 get_blob(int i, float t){
-  float spd   = 0.05; // Reduced speed for subtle movement
-  float range = 0.2;  // Smaller range for controlled stretching
-  vec2 c = vec2(rand(i), rand(i+42)) * 0.9 + 0.05; // Wide random spread
-  c += range * vec2(
-    sin(spd * t * rand(i+2)) * rand(i+56),
-    cos(spd * t * rand(i+9)) * rand(i*3)
-  );
-  float r = 0.0000000000025 + 0.0000005 * abs(rand(i+1));
-  return vec3(c, r);
-}
-
-void main(){
-  vec2 uv = gl_FragCoord.xy / iResolution.xy;
-  float canvasAsp = iResolution.x / iResolution.y;
-  float scale = uTexAspect / canvasAsp;
-  float x0 = (1.0 - scale) * 0.5;
-  vec2 iUV = vec2(x0 + uv.x * scale, 1.0 - uv.y);
-
-  float asp = iResolution.y / iResolution.x;
-  vec2 muv = uv; muv.y *= asp;
-
-  vec2 stretchUV = iUV;
-  for(int j = 0; j < 64; ++j){
-    if(j >= uBlobCount) break;
-    int i = uBlobStart + j;
-    vec3 b = get_blob(i, iTime);
-    vec2 center = b.xy; center.y *= asp;
-    float dist = length(muv - center);
-    float angle = atan(muv.y - center.y, muv.x - center.x);
-    float seed = rand(i+77) * 6.2831853;
-    float spike = pow(max(cos(angle - seed), 0.0), 150.0);
-    float stretchFactor = spike * 0.1; // Adjust stretch intensity
-    if(dist < 0.1){ // Only stretch near blobs
-      stretchUV.x += stretchFactor * cos(angle);
-      stretchUV.y += stretchFactor * sin(angle);
-    }
-  }
-
-  if(stretchUV.x >= 0.0 && stretchUV.x <= 1.0 && stretchUV.y >= 0.0 && stretchUV.y <= 1.0){
-    gl_FragColor = texture2D(iChannel0, stretchUV);
-  } else {
-    gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
-  }
-}
-`;
-
-const progStretch = link(vertSrc, fragStretchSrc);
-
 // —— Mask shader: renders each image or default layer with its mask ——
 const fragMaskSrc = `
 precision highp float;
@@ -131,9 +68,9 @@ float rand(int i){
 }
 
 vec3 get_blob(int i, float t){
-  float spd   = 0.05; // Reduced speed for subtle movement
-  float range = 0.2;  // Smaller range for controlled movement
-  vec2 c = vec2(rand(i), rand(i+42)) * 0.9 + 0.05; // Wide random spread
+  float spd   = 0.05;
+  float range = 0.2;
+  vec2 c = vec2(rand(i), rand(i+42)) * 0.9 + 0.05;
   c += range * vec2(
     sin(spd * t * rand(i+2)) * rand(i+56),
     cos(spd * t * rand(i+9)) * rand(i*3)
@@ -145,9 +82,15 @@ vec3 get_blob(int i, float t){
 void main(){
   vec2 uv = gl_FragCoord.xy / iResolution.xy;
   float canvasAsp = iResolution.x / iResolution.y;
-  float scale = uTexAspect / canvasAsp;
-  float x0 = (1.0 - scale) * 0.5;
-  vec2 iUV = vec2(x0 + uv.x * scale, 1.0 - uv.y);
+  float texAsp    = uTexAspect;
+  float ratio     = texAsp / canvasAsp;
+  vec2 scale = (ratio > 1.0)
+    ? vec2(ratio, 1.0)
+    : vec2(1.0, 1.0/ratio);
+  vec2 centered = (uv - 0.5) / scale + 0.5;
+  // flip vertically
+  vec2 iUV = vec2(centered.x, 1.0 - centered.y);
+
 
   float asp = iResolution.y / iResolution.x;
   vec2 muv = uv; muv.y *= asp;
@@ -172,13 +115,15 @@ void main(){
   vec3 bg = vec3(0.882, 0.882, 0.875); // #E1E1DF
   vec4 layerColor;
   if(layerIndex == 0){
-    layerColor = vec4(0.494, 0.494, 0.494, 1.0); // #7E7E7E with 50% opacity
+    layerColor = vec4(0.494, 0.494, 0.494, 1.0); // #7E7E7E fully opaque
   } else if(layerIndex == 1){
-    layerColor = vec4(0.686, 0.686, 0.690, 1.0); // #AFAFB0 with 50% opacity
+    layerColor = vec4(0.686, 0.686, 0.690, 1.0); // #AFAFB0 fully opaque
+  } else {
+    layerColor = vec4(0.0, 0.0, 0.0, 1.0);
   }
 
   if(sum > 3000.0){
-    if(isImage && iUV.x >=0.0 && iUV.x <=1.0 && iUV.y >=0.0 && iUV.y <=1.0){
+    if(isImage && iUV.x >= 0.0 && iUV.x <= 1.0 && iUV.y >= 0.0 && iUV.y <= 1.0){
       vec4 col = texture2D(iChannel0, iUV);
       gl_FragColor = vec4(col.rgb, 1.0);
     } else if(!isImage){
@@ -226,8 +171,7 @@ function setupAttrib(prog) {
 }
 
 // —— Framebuffer setup ——
-function initFramebuffers() {
-  // Main FBO
+function initFramebuffer() {
   if (fbo) gl.deleteFramebuffer(fbo);
   if (fboTex) gl.deleteTexture(fboTex);
 
@@ -259,41 +203,9 @@ function initFramebuffers() {
     0
   );
 
-  // Stretch FBO
-  if (fboStretch) gl.deleteFramebuffer(fboStretch);
-  if (fboStretchTex) gl.deleteTexture(fboStretchTex);
-
-  fboStretchTex = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, fboStretchTex);
-  gl.texImage2D(
-    gl.TEXTURE_2D,
-    0,
-    gl.RGBA,
-    cvs.width,
-    cvs.height,
-    0,
-    gl.RGBA,
-    gl.UNSIGNED_BYTE,
-    null
-  );
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-
-  fboStretch = gl.createFramebuffer();
-  gl.bindFramebuffer(gl.FRAMEBUFFER, fboStretch);
-  gl.framebufferTexture2D(
-    gl.FRAMEBUFFER,
-    gl.COLOR_ATTACHMENT0,
-    gl.TEXTURE_2D,
-    fboStretchTex,
-    0
-  );
-
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 }
-initFramebuffers();
+initFramebuffer();
 
 // —— Placeholder texture for default layers ——
 const placeholderTex = gl.createTexture();
@@ -315,15 +227,6 @@ gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
 // —— Uniform locations ——
-const uStretch = {
-  res: gl.getUniformLocation(progStretch, "iResolution"),
-  tex: gl.getUniformLocation(progStretch, "iChannel0"),
-  t: gl.getUniformLocation(progStretch, "iTime"),
-  uBlobStart: gl.getUniformLocation(progStretch, "uBlobStart"),
-  uBlobCount: gl.getUniformLocation(progStretch, "uBlobCount"),
-  uTexAspect: gl.getUniformLocation(progStretch, "uTexAspect"),
-};
-
 const uMsk = {
   res: gl.getUniformLocation(progMask, "iResolution"),
   tex: gl.getUniformLocation(progMask, "iChannel0"),
@@ -345,14 +248,7 @@ const uFinal = {
 function render(ts) {
   gl.viewport(0, 0, cvs.width, cvs.height);
 
-  // Step 1: Render to FBO Stretch (for images only)
-  gl.useProgram(progStretch);
-  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
-  setupAttrib(progStretch);
-  gl.uniform2f(uStretch.res, cvs.width, cvs.height);
-  gl.uniform1f(uStretch.t, ts * 0.001);
-
-  // Step 2: Render to FBO (composite layers or images with masks)
+  // Render to FBO (composite layers or images with masks)
   gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
   gl.clearColor(0.882, 0.882, 0.875, 1.0); // #E1E1DF
   gl.clear(gl.COLOR_BUFFER_BIT);
@@ -388,21 +284,8 @@ function render(ts) {
   } else {
     // Render each image with its mask
     images.forEach((img, index) => {
-      // Stretch pass
-      gl.bindFramebuffer(gl.FRAMEBUFFER, fboStretch);
-      gl.clear(gl.COLOR_BUFFER_BIT);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, img.texture);
-      gl.uniform1i(uStretch.tex, 0);
-      gl.uniform1i(uStretch.uBlobStart, index * blobsPerImage);
-      gl.uniform1i(uStretch.uBlobCount, blobsPerImage);
-      gl.uniform1f(uStretch.uTexAspect, img.aspect);
-      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-
-      // Mask pass
-      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, fboStretchTex);
       gl.uniform1i(uMsk.tex, 0);
       gl.uniform1i(uMsk.uBlobStart, index * blobsPerImage);
       gl.uniform1i(uMsk.uBlobCount, blobsPerImage);
@@ -416,7 +299,7 @@ function render(ts) {
 
   gl.disable(gl.BLEND);
 
-  // Step 3: Render FBO to screen
+  // Render FBO to screen
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.useProgram(progFinal);
   gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
