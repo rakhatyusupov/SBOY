@@ -108,9 +108,11 @@ void main(){
     float angle = atan(muv.y - center.y, muv.x - center.x);
     float phase = iTime * 0.5 + spikeAngle;
     float show = max(sin(phase) * 0.5 + 0.5, 0.0);
-    float spikeAngleSharpness = 2000.0; // ↑ чем больше, тем уже угол спайка
-    float spikeLengthFactor   = 0.05;   // ↑ чем больше, тем длиннее спайк
-
+    
+    // ВАРИАЦИЯ СПАЙКОВ: случайные параметры для каждого метабола
+    float spikeAngleSharpness = mix(1600.0, 2000.0, rand(i+200)); // вариация узости
+    float spikeLengthFactor   = mix(0.1, 0.5, rand(i+300));    // вариация длины
+    
     // затем:
     float spike = pow(max(cos(angle - spikeAngle), 0.0), spikeAngleSharpness);
     float spikeAmp = spikeLengthFactor * show;
@@ -118,7 +120,7 @@ void main(){
     float d = max(length(center - muv) - R, 0.0);
 
     float sharpness = mix(3.0, 6.0, rand(i + 99)); // насколько резко спадает blob
-    float blobScale     = mix(1.5, 3.5, rand(i + 133)); // насколько "толстый" контур
+    float blobScale = mix(1.5, 3.5, rand(i + 133)); // насколько "толстый" контур
     sum += 1.0 / pow(d * blobScale, sharpness);
 
     // Добавленные узкие прямоугольники
@@ -132,10 +134,10 @@ void main(){
     vec2 closestPoint = center + t * lineDir;
     float lineDist = length(muv - closestPoint);
     
-    // Параметры прямоугольника (очень узкие)
-    float lineWidth = 0.0005;
-    float lineSharpness = 100.0;
-    float lineStrength = 0.8;
+    // ВАРИАЦИЯ ПРЯМОУГОЛЬНИКОВ: случайные параметры для каждого
+    float lineWidth = mix(0.003, 0.0009, rand(i+400));     // вариация ширины
+    float lineSharpness = mix(80.0, 120.0, rand(i+500));    // вариация резкости
+    float lineStrength = mix(0.7, 0.9, rand(i+600));        // вариация интенсивности
     
     // Добавляем вклад прямоугольника в общую сумму
     sum += lineStrength / pow(lineDist / lineWidth, lineSharpness);
@@ -166,8 +168,6 @@ void main(){
     gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
   }
 }
-
-
 `;
 
 const progMask = link(vertSrc, fragMaskSrc);
