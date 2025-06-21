@@ -101,22 +101,44 @@ void main(){
     int i = uBlobStart + j;
     vec3 b = get_blob(i, iTime);
     vec2 center = b.xy; center.y *= asp;
+    
+    // Вынесенный угол спайка в отдельную переменную
+    float spikeAngle = rand(i+77) * 6.2831853;
+    
     float angle = atan(muv.y - center.y, muv.x - center.x);
-    float seed = rand(i+77) * 6.2831853;
-    float phase = iTime * 0.5 + seed;
+    float phase = iTime * 0.5 + spikeAngle;
     float show = max(sin(phase) * 0.5 + 0.5, 0.0);
-   float spikeAngleSharpness = 2000.0; // ↑ чем больше, тем уже угол спайка
-float spikeLengthFactor   = 0.05;   // ↑ чем больше, тем длиннее спайк
+    float spikeAngleSharpness = 2000.0; // ↑ чем больше, тем уже угол спайка
+    float spikeLengthFactor   = 0.05;   // ↑ чем больше, тем длиннее спайк
 
-// затем:
-float spike = pow(max(cos(angle - seed), 0.0), spikeAngleSharpness);
-float spikeAmp = spikeLengthFactor * show;
-float R = b.z + spikeAmp * spike;
-float d = max(length(center - muv) - R, 0.0);
+    // затем:
+    float spike = pow(max(cos(angle - spikeAngle), 0.0), spikeAngleSharpness);
+    float spikeAmp = spikeLengthFactor * show;
+    float R = b.z + spikeAmp * spike;
+    float d = max(length(center - muv) - R, 0.0);
 
     float sharpness = mix(3.0, 6.0, rand(i + 99)); // насколько резко спадает blob
-    float scale     = mix(1.5, 3.5, rand(i + 133)); // насколько "толстый" контур
-    sum += 1.0 / pow(d * scale, sharpness);
+    float blobScale     = mix(1.5, 3.5, rand(i + 133)); // насколько "толстый" контур
+    sum += 1.0 / pow(d * blobScale, sharpness);
+
+    // Добавленные узкие прямоугольники
+    vec2 rayDir = vec2(cos(spikeAngle), sin(spikeAngle));
+    vec2 rayEnd = center + rayDir * 100.0; // Выходим далеко за пределы экрана
+    
+    // Рассчет расстояния до линии
+    vec2 lineDir = rayEnd - center;
+    vec2 toPoint = muv - center;
+    float t = clamp(dot(toPoint, lineDir) / dot(lineDir, lineDir), 0.0, 1.0);
+    vec2 closestPoint = center + t * lineDir;
+    float lineDist = length(muv - closestPoint);
+    
+    // Параметры прямоугольника (очень узкие)
+    float lineWidth = 0.0005;
+    float lineSharpness = 100.0;
+    float lineStrength = 0.8;
+    
+    // Добавляем вклад прямоугольника в общую сумму
+    sum += lineStrength / pow(lineDist / lineWidth, lineSharpness);
   }
 
   vec3 bg = vec3(0.882, 0.882, 0.875); // #E1E1DF
@@ -144,6 +166,8 @@ float d = max(length(center - muv) - R, 0.0);
     gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
   }
 }
+
+
 `;
 
 const progMask = link(vertSrc, fragMaskSrc);
