@@ -105,11 +105,18 @@ void main(){
     float seed = rand(i+77) * 6.2831853;
     float phase = iTime * 0.5 + seed;
     float show = max(sin(phase) * 0.5 + 0.5, 0.0);
-    float spike = pow(max(cos(angle - seed), 0.0), 150.0);
-    float spikeAmp = 0.9 * show;
-    float R = b.z + spikeAmp * spike;
-    float d = max(length(center - muv) - R, 0.0);
-    sum += 1.0 / pow(d * 2.0, 4.0);
+   float spikeAngleSharpness = 2000.0; // ↑ чем больше, тем уже угол спайка
+float spikeLengthFactor   = 0.05;   // ↑ чем больше, тем длиннее спайк
+
+// затем:
+float spike = pow(max(cos(angle - seed), 0.0), spikeAngleSharpness);
+float spikeAmp = spikeLengthFactor * show;
+float R = b.z + spikeAmp * spike;
+float d = max(length(center - muv) - R, 0.0);
+
+    float sharpness = mix(3.0, 6.0, rand(i + 99)); // насколько резко спадает blob
+    float scale     = mix(1.5, 3.5, rand(i + 133)); // насколько "толстый" контур
+    sum += 1.0 / pow(d * scale, sharpness);
   }
 
   vec3 bg = vec3(0.882, 0.882, 0.875); // #E1E1DF
